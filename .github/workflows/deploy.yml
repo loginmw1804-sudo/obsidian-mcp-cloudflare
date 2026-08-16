@@ -1,0 +1,143 @@
+name: Deploy Obsidian MCP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      R2_BUCKET_NAME: secondbrain
+      WORKER_NAME: obsidian-mcp
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find or create OAuth KV namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KV_ID=$(npx wrangler kv namespace list 2>/dev/null \
+            | jq -r '.[] | select(.title == "OAUTH_KV") | .id' \
+            | head -n 1)
+
+          if [ -z "$KV_ID" ]; then
+            echo "Creating OAUTH_KV namespace..."
+
+            OUTPUT=$(npx wrangler kv namespace create OAUTH_KV)
+            echo "$OUTPUT"
+
+            KV_ID=$(echo "$OUTPUT" \
+              | grep -oE '[0-9a-f]{32}' \
+              | tail -n 1)
+          fi
+
+          if [ -z "$KV_ID" ]; then
+            echo "ERROR: Could not determine KV namespace ID."
+            exit 1
+          fi
+
+          echo "OAUTH_KV_ID=$KV_ID" >> "$GITHUB_ENV"
+
+      - name: Generate Wrangler configuration
+        shell: bash
+        run: |
+          cat > wrangler.jsonc <<EOF
+          {
+            "\$schema": "node_modules/wrangler/config-schema.json",
+            "name": "${WORKER_NAME}",
+            "account_id": "${CLOUDFLARE_ACCOUNT_ID}",
+            "main": "src/index.ts",
+            "compatibility_date": "2026-05-01",
+            "compatibility_flags": ["nodejs_compat"],
+
+            "workers_dev": true,
+
+            "kv_namespaces": [
+              {
+                "binding": "OAUTH_KV",
+                "id": "${OAUTH_KV_ID}"
+              }
+            ],
+
+            "r2_buckets": [
+              {
+                "binding": "VAULT",
+                "bucket_name": "${R2_BUCKET_NAME}"
+              }
+            ],
+
+            "durable_objects": {
+              "bindings": [
+                {
+                  "name": "MCP_OBJECT",
+                  "class_name": "ObsidianMCP"
+                }
+              ]
+            },
+
+            "migrations": [
+              {
+                "tag": "v1",
+                "new_sqlite_classes": ["ObsidianMCP"]
+              }
+            ],
+
+            "vars": {
+              "VAULT_PREFIX": "",
+              "DAILY_NOTE_PATH_TEMPLATE": "Daily Notes/{{YYYY-MM-DD}}.md",
+              "WEEKLY_NOTE_PATH_TEMPLATE": "",
+              "MONTHLY_NOTE_PATH_TEMPLATE": "",
+              "QUARTERLY_NOTE_PATH_TEMPLATE": "",
+              "YEARLY_NOTE_PATH_TEMPLATE": "",
+              "PERMALINK_BASE_URL": "",
+              "SERVICE_BASE_URL": "",
+              "ATTACHMENTS_PATH_MODE": "per_note_subfolder",
+              "ATTACHMENTS_SUBFOLDER": "files",
+              "ATTACHMENT_ALLOWED_EXTENSIONS": "png,jpg,jpeg,gif,webp,svg,pdf,docx,xlsx,pptx,zip,txt",
+              "ATTACHMENT_MAX_BYTES": 26214400,
+              "ATTACHMENTS_MOVE_WITH_NOTE": "unique_refs",
+              "ATTACHMENT_URL_TIMEOUT_MS": 20000,
+              "ATTACHMENT_FETCH_HOST_ALLOWLIST": "",
+              "CONNECTION_DIAGNOSTICS": "false"
+            },
+
+            "observability": {
+              "enabled": true
+            }
+          }
+          EOF
+
+      - name: Set OAuth password
+        run: |
+          printf '%s' '${{ secrets.AUTH_PASSWORD }}' \
+            | npx wrangler secret put AUTH_PASSWORD
+
+      - name: Type check
+        run: npm run types
+
+      - name: Tests
+        run: npm test
+
+      - name: Deploy
+        run: npx wrangler deploy
