@@ -11,6 +11,7 @@ import { generatePermalink, parseFrontmatter, patchFrontmatter } from "./tools/m
 import { getOrCreatePeriodicNote, appendToPeriodicNote } from "./tools/periodic";
 import type { Period } from "../vault/periodic";
 import { backfillIds } from "./tools/admin";
+import { recallMemory, remember } from "./tools/memory";
 import {
   deleteAttachment,
   headAttachment,
