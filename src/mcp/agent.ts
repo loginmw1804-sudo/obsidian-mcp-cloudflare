@@ -198,7 +198,45 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
     void this.index;
 
     this.server.tool(
-      "list_notes",
+          this.server.tool(
+      "recall_memory",
+      "Retrieve relevant persistent personal context from Marian's Obsidian memory. Use this when information from previous conversations, personal context, projects, decisions, preferences, goals, or history may be relevant. Search the vault before reasoning instead of relying on Claude's own memory.",
+      {
+        query: z.string().min(1).max(48),
+        limit: z.number().int().positive().max(12).optional(),
+      },
+      async ({ query, limit }) =>
+        instrument("recall_memory", async () =>
+          fromToolResult(
+            await recallMemory(this.vault, this.cfg, this.index, {
+              query,
+              limit,
+            }),
+            (value) => JSON.stringify(value),
+          ),
+        ),
+    );
+
+    this.server.tool(
+      "remember",
+      "Persist durable information into Marian's Obsidian memory. Before using this tool, search for an existing canonical note and prefer updating it over creating a duplicate. Use this for durable facts, preferences, decisions, project updates, goals, and meaningful long-term context.",
+      {
+        path: NotePath,
+        content: z.string(),
+        search_query: z.string().max(48).optional(),
+      },
+      async ({ path, content, search_query }) =>
+        instrument("remember", async () =>
+          fromToolResult(
+            await remember(this.vault, this.cfg, this.index, {
+              path,
+              content,
+              search_query,
+            }),
+            (value) => JSON.stringify(value),
+          ),
+        ),
+    );"list_notes",
       "List every markdown note in the vault. Returns an array of vault-relative paths.",
       {},
       async () =>
