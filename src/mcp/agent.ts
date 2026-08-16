@@ -35,7 +35,7 @@ import {
 // POST to this Durable Object as a WebSocket upgrade carrying the HTTP method
 // and the base64 JSON-RPC payload in these headers. Read here only for the
 // read-only connection diagnostic in onConnect; if the SDK renames them the
-// diagnostic silently no-ops (decodeRequestIdsFromHeader → []) and never affects
+// diagnostic silently no-ops (decodeRequestIdsFromHeader â []) and never affects
 // request handling.
 const MCP_HTTP_METHOD_HEADER = "cf-mcp-method";
 const MCP_MESSAGE_HEADER = "cf-mcp-message";
@@ -93,7 +93,7 @@ function fromToolResult<T>(r: ToolResult<T>, render: (value: T) => string): McpR
   return errResponse(reason, rest);
 }
 
-// Multi-block variant — used by read_note to keep the raw note body as the
+// Multi-block variant â used by read_note to keep the raw note body as the
 // primary text block (preserving the pre-0.7.0 client UX) while still
 // surfacing the permalink as a second JSON-typed block when enabled.
 function fromToolResultBlocks<T>(
@@ -107,7 +107,7 @@ function fromToolResultBlocks<T>(
   return errResponse(reason, rest);
 }
 
-// Mixed-block variant — used by read_attachment, which returns an `image`
+// Mixed-block variant â used by read_attachment, which returns an `image`
 // content block for image MIME types (so the client renders the bytes inline)
 // followed by a JSON metadata text block. Failures still serialize to a single
 // text block via errResponse.
@@ -149,7 +149,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
   // the session; two concurrent same-session requests sharing an id can cross
   // streams (one read_note returning another's body). It WARNs
   // (`mcp_request_id_collision`) whenever an incoming id is already in flight on
-  // another connection of this session — the exact trigger — always on, since
+  // another connection of this session â the exact trigger â always on, since
   // that case is rare and high-signal (a standing canary). The per-POST
   // `mcp_post_connect` debug trace is gated behind CONNECTION_DIAGNOSTICS (default
   // off) to avoid log noise. Wrapped so a diagnostic failure can never break the
@@ -169,7 +169,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
           const colliding = findCollidingRequestIds(requestIds, conn.id, open);
           if (colliding.length > 0) {
             // Always on: the collision WARN is rare (needs a misbehaving client)
-            // and high-signal — a standing canary for the cross-conversation
+            // and high-signal â a standing canary for the cross-conversation
             // response-bleed trigger recurring. Cheap: only emits on collision.
             log.warn("mcp_request_id_collision", {
               sessionId,
@@ -178,7 +178,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
               colliding,
             });
           } else if (this.env.CONNECTION_DIAGNOSTICS === "true") {
-            // Per-POST trace — one debug line per tool call, so default-OFF to
+            // Per-POST trace â one debug line per tool call, so default-OFF to
             // avoid log noise (it roughly doubles instrument()'s per-call debug).
             // Flip CONNECTION_DIAGNOSTICS=true to study session/request-id behavior.
             log.debug("mcp_post_connect", { sessionId, connectionId: conn.id, requestIds });
@@ -196,9 +196,9 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
   async init() {
     // Touch the index getter so schema migrations run on every DO wake.
     void this.index;
-      this.server.tool(
+    this.server.tool(
       "recall_memory",
-      "Retrieve relevant persistent personal context from Marian's Obsidian vault. Use this when previous conversations, personal context, projects, decisions, preferences, goals, or history may be relevant. Search the vault before reasoning instead of relying on Claude's own memory.",
+      "Retrieve relevant persistent personal context from Marian's Obsidian vault. Use this before reasoning whenever previous conversations, personal context, projects, decisions, preferences, goals, routines, or history may materially affect the answer. Do not rely on Claude's own memory when persistent context may exist in the vault.",
       {
         query: z.string().min(1).max(48),
         limit: z.number().int().positive().max(12).optional(),
@@ -217,7 +217,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "remember",
-      "Persist durable information into Marian's Obsidian vault. Use this for durable facts, preferences, decisions, project updates, goals, and meaningful long-term context.",
+      "Persist durable information into Marian's Obsidian vault. Use for durable facts, preferences, decisions, project updates, goals, meaningful long-term context, and important new knowledge. Prefer updating an existing canonical note over creating a duplicate. The caller should search the vault first when the canonical destination is uncertain.",
       {
         path: NotePath,
         content: z.string(),
@@ -230,24 +230,6 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
               path,
               content,
               search_query,
-            }),
-            (value) => JSON.stringify(value),
-          ),
-        ),
-    );
-    this.server.tool(
-      "recall_memory",
-      "Retrieve relevant persistent personal context from Marian's Obsidian vault. Use this when previous conversations, personal context, projects, decisions, preferences, goals, or history may be relevant. Search the vault before reasoning instead of relying on Claude's own memory.",
-      {
-        query: z.string().min(1).max(48),
-        limit: z.number().int().positive().max(12).optional(),
-      },
-      async ({ query, limit }) =>
-        instrument("recall_memory", async () =>
-          fromToolResult(
-            await recallMemory(this.vault, this.cfg, this.index, {
-              query,
-              limit,
             }),
             (value) => JSON.stringify(value),
           ),
@@ -255,74 +237,15 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
     );
 
     this.server.tool(
-      "remember",
-      "Persist durable information into Marian's Obsidian vault. Use this for durable facts, preferences, decisions, project updates, goals, and meaningful long-term context.",
-      {
-        path: NotePath,
-        content: z.string(),
-        search_query: z.string().max(48).optional(),
-      },
-      async ({ path, content, search_query }) =>
-        instrument("remember", async () =>
-          fromToolResult(
-            await remember(this.vault, this.cfg, this.index, {
-              path,
-              content,
-              search_query,
-            }),
-            (value) => JSON.stringify(value),
-          ),
-        ),
-    );
-    this.server.tool(
-          this.server.tool(
-      "recall_memory",
-      "Retrieve relevant persistent personal context from Marian's Obsidian memory. Use this when information from previous conversations, personal context, projects, decisions, preferences, goals, or history may be relevant. Search the vault before reasoning instead of relying on Claude's own memory.",
-      {
-        query: z.string().min(1).max(48),
-        limit: z.number().int().positive().max(12).optional(),
-      },
-      async ({ query, limit }) =>
-        instrument("recall_memory", async () =>
-          fromToolResult(
-            await recallMemory(this.vault, this.cfg, this.index, {
-              query,
-              limit,
-            }),
-            (value) => JSON.stringify(value),
-          ),
-        ),
-    );
-
-    this.server.tool(
-      "remember",
-      "Persist durable information into Marian's Obsidian memory. Before using this tool, search for an existing canonical note and prefer updating it over creating a duplicate. Use this for durable facts, preferences, decisions, project updates, goals, and meaningful long-term context.",
-      {
-        path: NotePath,
-        content: z.string(),
-        search_query: z.string().max(48).optional(),
-      },
-      async ({ path, content, search_query }) =>
-        instrument("remember", async () =>
-          fromToolResult(
-            await remember(this.vault, this.cfg, this.index, {
-              path,
-              content,
-              search_query,
-            }),
-            (value) => JSON.stringify(value),
-          ),
-        ),
-    );"list_notes",
+      "list_notes",
       "List every markdown note in the vault. Returns an array of vault-relative paths.",
       {},
       async () =>
         instrument("list_notes", async () => okJson(await listNotes(this.vault, this.cfg))),
     );
-
     this.server.tool(
       "read_note",
-      "Read the full contents of a single markdown note. The note body is returned as the first text block (raw markdown, including the frontmatter). A second text block always follows containing JSON `{permalink?, etag, frontmatter}` — `frontmatter` is the parsed YAML metadata object (empty `{}` if none), `etag` is the note's current R2 etag (pass it back as `if_match` on a later replace_note/replace_body/patch_note/patch_frontmatter to make that edit conditional — the edit then fails with reason='precondition_failed' instead of silently overwriting a change another writer made in between), and `permalink` (the short HTTP URL that resolves into Obsidian via the link-resolver Worker) is present only when PERMALINK_BASE_URL is configured. Clients that only inspect content[0] still get the raw body unchanged.",
+      "Read the full contents of a single markdown note. The note body is returned as the first text block (raw markdown, including the frontmatter). A second text block always follows containing JSON `{permalink?, etag, frontmatter}` â `frontmatter` is the parsed YAML metadata object (empty `{}` if none), `etag` is the note's current R2 etag (pass it back as `if_match` on a later replace_note/replace_body/patch_note/patch_frontmatter to make that edit conditional â the edit then fails with reason='precondition_failed' instead of silently overwriting a change another writer made in between), and `permalink` (the short HTTP URL that resolves into Obsidian via the link-resolver Worker) is present only when PERMALINK_BASE_URL is configured. Clients that only inspect content[0] still get the raw body unchanged.",
       { path: NotePath },
       async ({ path }) =>
         instrument("read_note", async () =>
@@ -339,7 +262,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "search_notes",
-      "Case-insensitive substring search across every note. Matches against either the note body OR the note's file path, so 'kevin' will find both `Notes about Kevin.md` (body match) and `People/Kevin Meeting.md` (filename-only match). Returns matching paths with short snippets around the first body-match position; filename-only matches return a generic body-prefix snippet — the `path` field itself is the signal for why the note matched. Backed by an incrementally-synced DO-SQLite index — typical calls run in single-digit milliseconds. The query must be short (≈48 bytes or fewer, a DO-SQLite LIKE limit); a longer query returns reason='query_too_long' — split it into a shorter distinctive substring.",
+      "Case-insensitive substring search across every note. Matches against either the note body OR the note's file path, so 'kevin' will find both `Notes about Kevin.md` (body match) and `People/Kevin Meeting.md` (filename-only match). Returns matching paths with short snippets around the first body-match position; filename-only matches return a generic body-prefix snippet â the `path` field itself is the signal for why the note matched. Backed by an incrementally-synced DO-SQLite index â typical calls run in single-digit milliseconds. The query must be short (â48 bytes or fewer, a DO-SQLite LIKE limit); a longer query returns reason='query_too_long' â split it into a shorter distinctive substring.",
       { query: z.string().min(1), limit: z.number().int().positive().max(200).optional() },
       async ({ query, limit }) =>
         instrument("search_notes", async () => {
@@ -359,7 +282,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "create_note",
-      "Create a new markdown note. A stable nanoid `id:` is auto-minted into the frontmatter when your content omits one — do NOT pre-generate an id yourself; a caller-supplied `id:` in the content is honored verbatim instead. Returns JSON `{path, etag, id, permalink}` on success (`id` is the minted or supplied id; permalink is null if PERMALINK_BASE_URL is unset). Fails with reason='exists' if a note already exists at this path.",
+      "Create a new markdown note. A stable nanoid `id:` is auto-minted into the frontmatter when your content omits one â do NOT pre-generate an id yourself; a caller-supplied `id:` in the content is honored verbatim instead. Returns JSON `{path, etag, id, permalink}` on success (`id` is the minted or supplied id; permalink is null if PERMALINK_BASE_URL is unset). Fails with reason='exists' if a note already exists at this path.",
       { path: NotePath, content: z.string() },
       async (args) =>
         instrument("create_note", async () => {
@@ -373,7 +296,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "replace_note",
-      "Full overwrite of a note — replaces everything including frontmatter, EXCEPT the note's `id:` field, which is always preserved from the existing note (or freshly minted if absent). External links keyed on the id stay stable across full-content rewrites. Returns JSON `{path, etag, permalink}` on success. Use only when authoring the entire file content, including the YAML frontmatter block. For body-only edits that preserve frontmatter, use replace_body. For targeted edits to specific lines, use patch_note. Fails with reason='not_found' if the note does not exist, reason='malformed_frontmatter' if the SUPPLIED content has an unterminated `---` opener (an unterminated frontmatter in the existing note is salvaged — a fresh id is minted on top). Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional — it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
+      "Full overwrite of a note â replaces everything including frontmatter, EXCEPT the note's `id:` field, which is always preserved from the existing note (or freshly minted if absent). External links keyed on the id stay stable across full-content rewrites. Returns JSON `{path, etag, permalink}` on success. Use only when authoring the entire file content, including the YAML frontmatter block. For body-only edits that preserve frontmatter, use replace_body. For targeted edits to specific lines, use patch_note. Fails with reason='not_found' if the note does not exist, reason='malformed_frontmatter' if the SUPPLIED content has an unterminated `---` opener (an unterminated frontmatter in the existing note is salvaged â a fresh id is minted on top). Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional â it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
       { path: NotePath, content: z.string(), if_match: z.string().optional() },
       async (args) =>
         instrument("replace_note", async () => {
@@ -387,7 +310,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "replace_body",
-      "Replaces the body of a note (everything after the closing --- of the frontmatter) while preserving the existing frontmatter exactly. Returns JSON `{path, etag, permalink}` on success. Use when rewriting note content but keeping the note's identity, metadata, tags, and timestamps. For targeted edits to specific lines, prefer patch_note. For full overwrite including frontmatter, use replace_note. Fails with reason='not_found' if the note does not exist, reason='malformed_frontmatter' if the existing frontmatter is unterminated. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional — it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
+      "Replaces the body of a note (everything after the closing --- of the frontmatter) while preserving the existing frontmatter exactly. Returns JSON `{path, etag, permalink}` on success. Use when rewriting note content but keeping the note's identity, metadata, tags, and timestamps. For targeted edits to specific lines, prefer patch_note. For full overwrite including frontmatter, use replace_note. Fails with reason='not_found' if the note does not exist, reason='malformed_frontmatter' if the existing frontmatter is unterminated. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional â it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
       { path: NotePath, body: z.string(), if_match: z.string().optional() },
       async (args) =>
         instrument("replace_body", async () => {
@@ -401,7 +324,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "patch_note",
-      "Replace an anchor string within an existing note while preserving everything else. Returns JSON `{path, etag, count, permalink}` on success. Fails with reason='anchor_not_found' (anchor missing), 'ambiguous' (anchor appears multiple times — pass replace_all=true to replace all), or 'no_op' (old_str equals new_str). Use this for surgical edits. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional — it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
+      "Replace an anchor string within an existing note while preserving everything else. Returns JSON `{path, etag, count, permalink}` on success. Fails with reason='anchor_not_found' (anchor missing), 'ambiguous' (anchor appears multiple times â pass replace_all=true to replace all), or 'no_op' (old_str equals new_str). Use this for surgical edits. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional â it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
       {
         path: NotePath,
         old_str: z.string().min(1),
@@ -427,7 +350,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "move_note",
-      "Move or rename a note. Updates all wikilinks across the vault that pointed to the old path, preserving aliases, heading anchors, and block references. Best-effort atomic — the move and link updates apply together, with reverse-order rollback if any step fails (R2 has no transactional API, so a crash mid-rollback can still leave partial state). Wikilinks inside fenced code blocks and inline code spans are not rewritten. Fails with reason='not_found' if from_path doesn't exist, reason='exists' if to_path already exists, reason='same_path' if from_path equals to_path.",
+      "Move or rename a note. Updates all wikilinks across the vault that pointed to the old path, preserving aliases, heading anchors, and block references. Best-effort atomic â the move and link updates apply together, with reverse-order rollback if any step fails (R2 has no transactional API, so a crash mid-rollback can still leave partial state). Wikilinks inside fenced code blocks and inline code spans are not rewritten. Fails with reason='not_found' if from_path doesn't exist, reason='exists' if to_path already exists, reason='same_path' if from_path equals to_path.",
       { from_path: NotePath, to_path: NotePath },
       async (args) =>
         instrument("move_note", async () => {
@@ -482,7 +405,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "patch_frontmatter",
-      "Set and/or unset top-level YAML frontmatter fields on a note without rewriting the file. Edits happen at the line level, so untouched fields, key order, and comments are preserved exactly. `set` is an object of field→value (value may be a string, number, boolean, or an array of those — nested objects are rejected); `unset` is a list of field names to remove. The note's `id:` is immutable here: naming `id` in either `set` or `unset` fails with reason='id_immutable'. An id is ensured on write (minted if the note had none and returned in the result). Prefer this over patch_note for metadata edits — it cannot accidentally clip the id line. Returns JSON `{path, etag, id, permalink, changed_keys, removed_keys}`. Fails with reason='not_found' if the note is missing, reason='no_op' if both set and unset are empty, reason='unsupported_block_value' (with the offending `key`) if a targeted field holds a multi-line/block-style value — edit those by hand via replace_note. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional — it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
+      "Set and/or unset top-level YAML frontmatter fields on a note without rewriting the file. Edits happen at the line level, so untouched fields, key order, and comments are preserved exactly. `set` is an object of fieldâvalue (value may be a string, number, boolean, or an array of those â nested objects are rejected); `unset` is a list of field names to remove. The note's `id:` is immutable here: naming `id` in either `set` or `unset` fails with reason='id_immutable'. An id is ensured on write (minted if the note had none and returned in the result). Prefer this over patch_note for metadata edits â it cannot accidentally clip the id line. Returns JSON `{path, etag, id, permalink, changed_keys, removed_keys}`. Fails with reason='not_found' if the note is missing, reason='no_op' if both set and unset are empty, reason='unsupported_block_value' (with the offending `key`) if a targeted field holds a multi-line/block-style value â edit those by hand via replace_note. Pass optional `if_match` (an etag from read_note/parse_frontmatter or a prior write) to make this conditional â it then fails with reason='precondition_failed' if the note changed since, instead of silently overwriting a concurrent edit.",
       {
         path: NotePath,
         set: z.record(z.string(), FmValue).optional(),
@@ -508,7 +431,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "generate_permalink",
-      "Build a short HTTP permalink for a note. The URL routes through the link-resolver Worker (configured via PERMALINK_BASE_URL) and 302-redirects into Obsidian. Returns JSON `{path, permalink, kind}` where kind is 'id' (rename-stable, resolved by frontmatter id) or 'path' (fallback for notes without an id — breaks on rename, run backfill_ids to upgrade). Fails with reason='not_found' if the note does not exist, reason='permalink_disabled' if PERMALINK_BASE_URL is unset.",
+      "Build a short HTTP permalink for a note. The URL routes through the link-resolver Worker (configured via PERMALINK_BASE_URL) and 302-redirects into Obsidian. Returns JSON `{path, permalink, kind}` where kind is 'id' (rename-stable, resolved by frontmatter id) or 'path' (fallback for notes without an id â breaks on rename, run backfill_ids to upgrade). Fails with reason='not_found' if the note does not exist, reason='permalink_disabled' if PERMALINK_BASE_URL is unset.",
       { path: NotePath },
       async (args) =>
         instrument("generate_permalink", async () =>
@@ -537,7 +460,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "periodic_note_get_or_create",
-      "Look up the periodic note for the given cadence covering today (or the supplied YYYY-MM-DD anchor), creating it from the cadence's heading plus a fresh nanoid id if it does not yet exist. `period` selects the cadence (daily/weekly/monthly/quarterly/yearly); the anchor date is bucketed into the week/month/quarter/year that contains it. Returns JSON `{path, created, id}` — `id` is the existing or freshly-minted note id, or null if an existing note has none. Fails with reason='period_not_configured' when no path template is set for that cadence (set the matching DAILY_/WEEKLY_/MONTHLY_/QUARTERLY_/YEARLY_NOTE_PATH_TEMPLATE).",
+      "Look up the periodic note for the given cadence covering today (or the supplied YYYY-MM-DD anchor), creating it from the cadence's heading plus a fresh nanoid id if it does not yet exist. `period` selects the cadence (daily/weekly/monthly/quarterly/yearly); the anchor date is bucketed into the week/month/quarter/year that contains it. Returns JSON `{path, created, id}` â `id` is the existing or freshly-minted note id, or null if an existing note has none. Fails with reason='period_not_configured' when no path template is set for that cadence (set the matching DAILY_/WEEKLY_/MONTHLY_/QUARTERLY_/YEARLY_NOTE_PATH_TEMPLATE).",
       {
         period: PeriodEnum,
         date: z
@@ -578,7 +501,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "backfill_ids",
-      "Scan the vault and add a stable nanoid `id:` to the frontmatter of any note missing one. Default is dry-run (no writes) — pass dryRun=false to actually persist. `limit` caps how many notes are inspected. `prefix` (e.g. 'Daily Notes/') restricts the scan to one folder for smoke-testing. Notes that already have an `id` are skipped. Returns counts, up to 10 examples of newly-minted (path, id), and up to 20 malformed-frontmatter paths for follow-up. Designed to be re-runnable safely.",
+      "Scan the vault and add a stable nanoid `id:` to the frontmatter of any note missing one. Default is dry-run (no writes) â pass dryRun=false to actually persist. `limit` caps how many notes are inspected. `prefix` (e.g. 'Daily Notes/') restricts the scan to one folder for smoke-testing. Notes that already have an `id` are skipped. Returns counts, up to 10 examples of newly-minted (path, id), and up to 20 malformed-frontmatter paths for follow-up. Designed to be re-runnable safely.",
       {
         dryRun: z.boolean().optional(),
         limit: z.number().int().positive().optional(),
@@ -596,13 +519,13 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
     // NOTE: there is intentionally no `upload_attachment_data` (inline-base64)
     // tool. A tool call carries its arguments as the model's own output tokens,
     // so a base64 payload more than a few KB exhausts the model's output budget
-    // and the call truncates mid-stream — unusable for real files. Binary uploads
+    // and the call truncates mid-stream â unusable for real files. Binary uploads
     // go through `create_upload_link` (user taps a link) or `upload_attachment_url`
     // (server fetches a URL) instead.
 
     this.server.tool(
       "upload_attachment_url",
-      "Fetch an asset from an HTTPS URL server-side and store it as a vault attachment. Prefer a direct asset URL (ending in .png/.jpg/.pdf/…) over a web page — HTML responses are rejected. Security: HTTPS only; the host must be in the server's ATTACHMENT_FETCH_HOST_ALLOWLIST (default-closed — if the allowlist is empty NO host is fetchable and every call fails with 'host_not_allowed'; the operator may set it to '*' to allow any host); no IP-literal or localhost hosts (this denylist applies even when the allowlist is '*'); all of this is re-validated across redirects; plus a size cap (ATTACHMENT_MAX_BYTES) and fetch timeout. If `filename` is omitted it is taken from the URL, else synthesized from the response Content-Type. On success returns JSON `{path, embed_markdown, permalink, etag, size, content_type}`. ANY failure is terminal and writes nothing to the vault — never assume the file was stored (or that a source attachment may now be deleted/completed) unless you received the success JSON. Fails with reason='invalid_url', 'insecure_url' (not https), 'host_not_allowed' (host not in the allowlist), 'disallowed_host' (IP-literal/loopback), 'too_many_redirects', 'fetch_failed', 'html_response', 'too_large', 'no_extension_inferable', 'disallowed_extension' (file type not in ATTACHMENT_ALLOWED_EXTENSIONS — the error carries the allowed list), or 'exists'.",
+      "Fetch an asset from an HTTPS URL server-side and store it as a vault attachment. Prefer a direct asset URL (ending in .png/.jpg/.pdf/â¦) over a web page â HTML responses are rejected. Security: HTTPS only; the host must be in the server's ATTACHMENT_FETCH_HOST_ALLOWLIST (default-closed â if the allowlist is empty NO host is fetchable and every call fails with 'host_not_allowed'; the operator may set it to '*' to allow any host); no IP-literal or localhost hosts (this denylist applies even when the allowlist is '*'); all of this is re-validated across redirects; plus a size cap (ATTACHMENT_MAX_BYTES) and fetch timeout. If `filename` is omitted it is taken from the URL, else synthesized from the response Content-Type. On success returns JSON `{path, embed_markdown, permalink, etag, size, content_type}`. ANY failure is terminal and writes nothing to the vault â never assume the file was stored (or that a source attachment may now be deleted/completed) unless you received the success JSON. Fails with reason='invalid_url', 'insecure_url' (not https), 'host_not_allowed' (host not in the allowlist), 'disallowed_host' (IP-literal/loopback), 'too_many_redirects', 'fetch_failed', 'html_response', 'too_large', 'no_extension_inferable', 'disallowed_extension' (file type not in ATTACHMENT_ALLOWED_EXTENSIONS â the error carries the allowed list), or 'exists'.",
       {
         source_url: z.string().min(1),
         filename: z.string().optional(),
@@ -621,7 +544,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "create_upload_link",
-      "Mint a short-lived, single-use web link the USER taps to upload file(s) directly to the vault — this is THE way to get a local image/photo/PDF into the vault (a real file cannot be sent through a tool call at all; its bytes would blow the model's output budget). The bytes go straight from the user's browser to the server. Present the returned `upload_url` as a tappable link and tell the user to open it and pick/take the file(s). Mode is chosen by `filename` alone: (1) pass `filename` for a DETERMINISTIC single-file link — the file lands at exactly the returned `dest_path`, which you can then poll with head_attachment/read_attachment after the user says they've uploaded; (2) omit `filename` for a BATCH link — the user may pick up to `max_files` files (default 10) that land in `landing_dir`, which you find afterward via list_attachments. Any `max_files` value (even 1) stays batch mode; only `filename` triggers deterministic mode. `target_note` (a .md path) and `subfolder` set the destination folder. You don't need to know the final note at upload time — upload to your best guess (or a holding folder) and use move_attachment later to relocate. To extract text, call read_attachment on the stored file (it returns the image to you). The link expires (default 15 min, max 30) and works once. Returns JSON `{upload_url, expires_at, landing_dir, multiple, ...}` — `landing_dir` is the vault folder the file(s) land in, so after a batch upload you can call list_attachments scoped to that prefix instead of scanning the whole vault. `dest_path` is included only in deterministic mode (when you passed `filename`); `target_note`/`subfolder` are echoed only when you passed them. Fails with reason='upload_disabled' if the endpoint isn't configured.",
+      "Mint a short-lived, single-use web link the USER taps to upload file(s) directly to the vault â this is THE way to get a local image/photo/PDF into the vault (a real file cannot be sent through a tool call at all; its bytes would blow the model's output budget). The bytes go straight from the user's browser to the server. Present the returned `upload_url` as a tappable link and tell the user to open it and pick/take the file(s). Mode is chosen by `filename` alone: (1) pass `filename` for a DETERMINISTIC single-file link â the file lands at exactly the returned `dest_path`, which you can then poll with head_attachment/read_attachment after the user says they've uploaded; (2) omit `filename` for a BATCH link â the user may pick up to `max_files` files (default 10) that land in `landing_dir`, which you find afterward via list_attachments. Any `max_files` value (even 1) stays batch mode; only `filename` triggers deterministic mode. `target_note` (a .md path) and `subfolder` set the destination folder. You don't need to know the final note at upload time â upload to your best guess (or a holding folder) and use move_attachment later to relocate. To extract text, call read_attachment on the stored file (it returns the image to you). The link expires (default 15 min, max 30) and works once. Returns JSON `{upload_url, expires_at, landing_dir, multiple, ...}` â `landing_dir` is the vault folder the file(s) land in, so after a batch upload you can call list_attachments scoped to that prefix instead of scanning the whole vault. `dest_path` is included only in deterministic mode (when you passed `filename`); `target_note`/`subfolder` are echoed only when you passed them. Fails with reason='upload_disabled' if the endpoint isn't configured.",
       {
         target_note: NotePath.optional(),
         subfolder: z.string().optional(),
@@ -637,7 +560,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "read_attachment",
-      "Read a binary attachment back from the vault. For image types the bytes are returned as an MCP image content block (renderable inline) followed by a JSON metadata block. For non-image types (e.g. PDF) the response is a single JSON block containing the base64 bytes in `data_base64` — this can be large, so call head_attachment first to check `size` on uncertain files. Only allowlisted extensions are readable. Fails with reason='not_found' or 'disallowed_extension'.",
+      "Read a binary attachment back from the vault. For image types the bytes are returned as an MCP image content block (renderable inline) followed by a JSON metadata block. For non-image types (e.g. PDF) the response is a single JSON block containing the base64 bytes in `data_base64` â this can be large, so call head_attachment first to check `size` on uncertain files. Only allowlisted extensions are readable. Fails with reason='not_found' or 'disallowed_extension'.",
       { path: AttachmentPath },
       async ({ path }) =>
         instrument("read_attachment", async () =>
@@ -674,7 +597,7 @@ export class ObsidianMCP extends McpAgent<Env, never, Props> {
 
     this.server.tool(
       "head_attachment",
-      "Return metadata for an attachment without downloading its bytes — JSON `{path, size, content_type, etag, uploaded}`. Use to check `size` before a read_attachment on a potentially large file. Fails with reason='not_found'.",
+      "Return metadata for an attachment without downloading its bytes â JSON `{path, size, content_type, etag, uploaded}`. Use to check `size` before a read_attachment on a potentially large file. Fails with reason='not_found'.",
       { path: AttachmentPath },
       async ({ path }) =>
         instrument("head_attachment", async () =>
