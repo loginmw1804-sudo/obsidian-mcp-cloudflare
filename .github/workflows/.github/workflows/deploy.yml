@@ -1,4 +1,5 @@
 name: Deploy Obsidian MCP
+# trigger
 
 on:
   workflow_dispatch:
